@@ -9,6 +9,8 @@ class Permission(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
+    is_active = models.BooleanField(default=True)
+
     def __str__(self):
         return self.name
 
@@ -17,6 +19,9 @@ class Role(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
     permissions = models.ManyToManyField('Permission', related_name='roles')
+    
+    is_active = models.BooleanField(default=True)
+
     def __str__(self):
         return self.name
     
