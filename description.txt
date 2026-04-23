@@ -1,113 +1,77 @@
-want to build a shop Inventory management system, where the one user(admin) can manage his Shop(group of branches ), his multiple branches, branches will have one manager, and can have multiple salesman, the salesman can update how much they sales they have made and that all will be go to manager and manager will approve or reject their sales record/ and will update the branch inventory, the manager can do analysis of their branch(their one not others), and manager can request for all the things they might need from the admin and the admin will reject or accept the request, and the admin can view the analytics of all the branches
-
-Shop Inventory Management System — System Design
+🏪 Shop Inventory & POS Management System — System Design
 1. Objective
 
-Design a system where a shop owner (admin) can manage multiple branches, each branch having a manager and multiple salesmen.
+Design a system where a shop owner (admin) manages multiple branches, each branch having:
 
-The system will support:
+a manager
 
-inventory tracking per branch
+multiple accountants (POS operators)
 
-sales approval workflow
+The system supports:
 
-stock order workflow
+real-time billing (sales)
 
-analytics at branch and shop level
+branch-level inventory tracking
 
-notifications (later)
+stock request workflow (manager → admin)
 
-future SaaS support (multiple shops)
+analytics (branch + shop level)
 
-2. User Roles
+SaaS-ready multi-shop architecture
 
-The system contains three roles.
+2. Roles & Responsibilities
+Admin (Shop Owner)
 
-Admin
-
-Represents the shop owner.
-
-Capabilities:
-
-manage branches
-
-create managers and salesmen
-
-approve or reject stock requests from branches
-
-view analytics of all branches
+manage shop, branches, users
 
 manage product catalog
 
-Manager
+approve/reject stock requests
 
-Responsible for one branch.
+view analytics across all branches
 
-Capabilities:
+Manager (Branch Manager)
 
-approve or reject sales submitted by salesmen
+manages a single branch
 
-negotiate sales requests
+views inventory & analytics
 
-view branch inventory
+requests stock from admin
 
-request stock from admin
+monitors branch performance
 
-view branch analytics
+Accountant (POS Operator)
 
-Salesman
+creates bills (sales)
 
-Works under a branch manager.
+handles customer transactions
 
-Capabilities:
+updates inventory in real-time via billing
 
-create sales requests
-
-negotiate with manager
-
-track their sales
-
-3. Hierarchy Structure
-
-The system hierarchy:
-
-Shop
- ├── Branch 1
- │     ├── Manager
- │     ├── Salesman
- │     └── Inventory
- │
- ├── Branch 2
- │     ├── Manager
- │     ├── Salesman
- │     └── Inventory
-
-Future SaaS architecture:
-
-Platform
+3. System Hierarchy
+Platform (SaaS)
  ├── Shop A
- │     ├── Branches
+ │     ├── Branch 1
+ │     │     ├── Manager
+ │     │     ├── Accountants
+ │     │     └── Inventory
+ │     │
+ │     ├── Branch 2
  │
  ├── Shop B
- │     ├── Branches
 
-Each shop's data is isolated using shop_id.
+All data is isolated using shop_id.
 
-4. Core Entities (Database)
-Shop
-
-Represents a business.
-
+4. Core Entities (Database Design)
+4.1 Shop
 Shop
 ----
 id
 name
 owner_id
 created_at
-Branch
 
-Represents a physical store location.
-
+4.2 Branch
 Branch
 ------
 id
@@ -117,13 +81,7 @@ location
 manager_id
 created_at
 
-Relationship
-
-Shop → many Branches
-User
-
-Represents system users.
-
+4.3 User
 User
 ----
 id
@@ -135,21 +93,19 @@ shop_id
 branch_id
 created_at
 
-Roles
+Roles:
 
 ADMIN
 MANAGER
-SALESMAN
+ACCOUNTANT
 
-Constraints
+Constraints:
 
 ADMIN → no branch
 MANAGER → one branch
-SALESMAN → one branch
-Product
+ACCOUNTANT → one branch
 
-Products belong to a shop.
-
+4.4 Product
 Product
 -------
 id
@@ -161,11 +117,9 @@ unit_price
 reorder_threshold
 created_at
 
-reorder_threshold is used for low inventory alerts.
+4.5 Inventory
 
-Inventory
-
-Tracks stock of products at a branch.
+Represents stock of a product at a branch.
 
 Inventory
 ---------
@@ -176,94 +130,63 @@ quantity
 reserved_quantity
 updated_at
 
-Constraint
+Constraint:
 
 UNIQUE(branch_id, product_id)
 
-Available stock
+Key concept:
 
-available = quantity - reserved_quantity
-5. Workflow Design
+Inventory = stock of a product at a specific branch
 
-The system contains two separate workflows.
+5. Sales System (POS — Real-Time)
 
-1️⃣ Sales Workflow
-2️⃣ Order Request Workflow
+Sales are not workflow-based. They are instant transactions.
 
-Each workflow is implemented using a state machine model.
-
-Transitions are stored in a transition history table.
-
-6. Sales Workflow
-
-Purpose:
-
-Allow salesmen to submit sales requests which must be approved by managers.
-
-SalesRequest
-
-Represents a sales proposal created by a salesman.
-
-SalesRequest
-------------
+5.1 Sale (Bill)
+Sale
+----
 id
 branch_id
-salesman_id
-status
+accountant_id
+invoice_number
+total_amount
+payment_method
 created_at
-
-Possible states
-
-DRAFT
-PENDING_MANAGER_APPROVAL
-NEGOTIATION
-APPROVED
-REJECTED
-FINALIZED
-SalesRequestItem
-
-Each sales request can contain multiple products.
-
-SalesRequestItem
-----------------
+5.2 SaleItem
+SaleItem
+--------
 id
-sales_request_id
+sale_id
 product_id
 quantity
-proposed_price
-SalesRecord
+price_per_unit
+total_price
+5.3 Sales Flow
+Customer arrives
+        ↓
+Accountant creates bill
+        ↓
+Sale + SaleItems created
+        ↓
+Inventory updated immediately
+5.4 Inventory Update (Critical)
 
-Generated once a sales request is finalized.
+For each item:
 
-Represents the actual completed sale.
+inventory.quantity -= quantity_sold
 
-SalesRecord
------------
-id
-sales_request_id
-branch_id
-approved_by
-created_at
-SalesRecordItem
-SalesRecordItem
----------------
-id
-sales_record_id
-product_id
-quantity
-final_price
+Validation:
 
-Inventory impact
+if inventory.quantity < quantity_requested:
+    reject transaction
 
-inventory.quantity -= sold_quantity
-inventory.reserved_quantity -= reserved_quantity
-7. Order Request Workflow
+Must be executed inside a database transaction.
 
-Purpose:
+6. Order Request Workflow (Manager → Admin)
 
-Allow branch managers to request stock from the admin.
+This is the only workflow-based part of the system.
 
-OrderRequest
+6.1 OrderRequest
 OrderRequest
 ------------
 id
@@ -272,24 +195,22 @@ manager_id
 status
 created_at
 
-States
+States:
 
 PENDING_ADMIN_APPROVAL
 NEGOTIATION
 APPROVED
 REJECTED
 FINALIZED
-OrderRequestItem
+
+6.2 OrderRequestItem
 OrderRequestItem
 ----------------
 id
 order_request_id
 product_id
 quantity
-OrderRecord
-
-Generated after request approval.
-
+6.3 OrderRecord (Finalized Order)
 OrderRecord
 -----------
 id
@@ -297,25 +218,34 @@ order_request_id
 branch_id
 approved_by
 created_at
-OrderRecordItem
+6.4 OrderRecordItem
 OrderRecordItem
 ---------------
 id
 order_record_id
 product_id
 quantity
-
-Inventory impact
-
+6.5 Order Flow
+Manager creates request
+        ↓
+Admin reviews
+        ↓
+Approve / Reject / Negotiate
+        ↓
+If approved:
+    OrderRecord created
+    Inventory updated
+6.6 Inventory Update
 inventory.quantity += ordered_quantity
-8. Workflow Transition History
 
-To track all state transitions.
+7. Workflow Transition Tracking
+
+Used only for Order Workflow.
 
 WorkflowTransition
 ------------------
 id
-entity_type
+entity_type (ORDER_REQUEST)
 entity_id
 from_state
 to_state
@@ -323,21 +253,61 @@ changed_by
 comment
 timestamp
 
-Example:
+8. Permissions Model
+Accountant
 
-SalesRequest
-PENDING_APPROVAL → NEGOTIATION
-Manager: "Price too low"
+create sales (POS)
 
-This enables:
+view own branch sales
 
-audit trails
+Restriction:
 
-negotiation tracking
+accountant.branch_id == sale.branch_id
+Manager
 
-debugging workflow issues
+view branch inventory
 
-9. Notifications (Future Feature)
+request stock
+
+view branch analytics
+
+Restriction:
+
+manager.branch_id == resource.branch_id
+Admin
+
+full access within shop
+
+manage branches, users, products
+
+approve/reject order requests
+
+Restriction:
+
+admin.shop_id == resource.shop_id
+
+9. Analytics
+Branch (Manager)
+
+daily sales
+
+revenue
+
+top products
+
+low inventory alerts
+
+Shop (Admin)
+
+total revenue
+
+branch comparison
+
+best/worst performing branch
+
+product demand trends
+
+10. Notifications (Future)
 Notification
 ------------
 id
@@ -349,84 +319,79 @@ created_at
 
 Examples:
 
-Low inventory alert
-Sales approval pending
-Order request approved
-10. Inventory Updates
+low inventory alert
 
-Inventory changes happen only when records are finalized.
+order request approved/rejected
 
-Sales Approved
-inventory.quantity -= sold_quantity
-Order Approved
-inventory.quantity += ordered_quantity
+11. SaaS Design (Multi-Tenant)
 
-These operations must run inside database transactions.
+All major entities include:
 
-11. Analytics
-
-Manager Analytics
-
-daily sales
-monthly revenue
-top selling products
-low inventory alerts
-
-Admin Analytics
-
-branch comparison
-total revenue
-best performing branch
-inventory health
-
-Analytics can initially be computed from SalesRecord tables.
-
-12. SaaS Readiness
-
-All major entities include shop_id.
+shop_id
 
 Example:
 
 Product
 Branch
 User
-SalesRequest
 OrderRequest
 
-Queries must always filter:
+All queries must enforce:
 
 WHERE shop_id = current_user.shop_id
 
 This ensures data isolation between shops.
 
-13. Future Features
+12. Key Design Decisions
+1. Real-Time Sales Instead of Workflow
 
-Planned enhancements:
+aligns with real-world POS systems
 
-low inventory notifications
+simplifies backend
+
+enables real-time analytics
+
+2. Workflow Only for Stock Ordering
+
+keeps complexity where needed
+
+mirrors real business processes
+
+3. Inventory at Branch Level
+
+ensures accurate stock tracking
+
+supports multi-branch architecture
+
+4. Request → Record Pattern (Orders)
+
+clean separation of workflow and final state
+
+5. SaaS-Ready from Day 1
+
+all entities scoped by shop_id
+
+13. Future Enhancements
+
+low inventory alerts
 
 AI demand prediction
 
-real-time sales dashboard
+auto restock suggestions
 
-barcode scanning for products
+barcode scanning
 
-automated restock suggestions
+real-time dashboards (WebSockets)
 
-14. Key Design Decisions
+Final Summary
 
-The system is designed around:
+This system is a hybrid architecture:
 
-workflow-driven architecture
+POS system for real-time sales
 
-state machines
+workflow system for stock management
 
-request → record pattern
+multi-tenant SaaS-ready backend
 
-branch-level inventory management
-
-multi-product sales transactions
-
-SaaS scalability
-
-This approach avoids simple CRUD limitations and models real business processes.
+This is no longer just a CRUD project —
+it’s essentially a mini ERP + POS system, which is very strong for interviews and real-world relevance.
