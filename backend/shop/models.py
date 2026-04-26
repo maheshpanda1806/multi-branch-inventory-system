@@ -12,15 +12,16 @@ class Shop(models.Model):
     """
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     name = models.CharField(max_length=255)
-    owner = models.ForeignKey(
-        settings.AUTH_USER_MODEL,
-        on_delete=models.SET_NULL,
-        null=True,
-        blank=True,
-        related_name="owned_shops",
-    )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
+
+    @property
+    def owner(self):
+        return self.users.filter(
+            role__permissions__code="shop:own",
+            is_active=True
+        ).select_related("role").first()
+
  
     def __str__(self):
         return self.name
@@ -39,15 +40,15 @@ class Branch(models.Model):
     )
     name = models.CharField(max_length=255)
     address = models.CharField(max_length=255, blank=True, null=True)
-    manager = models.OneToOneField(      
-        settings.AUTH_USER_MODEL,
-        on_delete=models.SET_NULL,
-        null=True,
-        blank=True,
-        related_name="managed_branch",  
-    )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
+
+    @property
+    def manager(self):
+        return self.users.filter(
+            role__permissions__code="branch:manage",
+            is_active=True
+        ).select_related("role").first()
  
     def __str__(self):
         return f"{self.shop.name} — {self.name}"
