@@ -397,7 +397,7 @@ This is no longer just a CRUD project —
 it’s essentially a mini ERP + POS system, which is very strong for interviews and real-world relevance.
 
 
-Resume point :
+Resume point : Mahesh
 Built a multi-tenant SaaS ERP + POS platform supporting multi-branch retail operations with real-time billing and inventory tracking, ensuring strict data isolation using shop_id
 Designed a dynamic role-based access control (RBAC) system, allowing each shop to define custom roles (e.g., HR, Finance) with configurable permissions from a centralized permission list
 Engineered a transactional POS engine with atomic sale and inventory updates, preventing overselling and maintaining consistency across distributed branch inventories
