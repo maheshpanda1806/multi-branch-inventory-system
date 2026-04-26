@@ -1,6 +1,8 @@
 import uuid
 from django.db import models
 from django.contrib.auth.models import AbstractBaseUser, BaseUserManager, PermissionsMixin
+from django.core.exceptions import ValidationError
+from shop.models import Shop
 
 # Create your models here.
 class Permission(models.Model):
@@ -15,18 +17,24 @@ class Permission(models.Model):
         return self.name
 
 class Role(models.Model):
-    name = models.CharField(max_length=255, unique=True)
+    name = models.CharField(max_length=255)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
     permissions = models.ManyToManyField('Permission', related_name='roles')
-    
+    shop = models.ForeignKey(
+        Shop,
+        on_delete=models.CASCADE,
+        related_name="roles",    
+    )
     is_active = models.BooleanField(default=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(fields=["shop", "name"], name="unique_role_name_per_shop"),
+        ]
 
     def __str__(self):
         return self.name
-    
-
-
 
 class UserManager(BaseUserManager):
     def create_user(self, email, password=None, **extra_fields):
@@ -74,10 +82,11 @@ class User(AbstractBaseUser, PermissionsMixin):
     objects = UserManager()
 
     def get_permissions(self):
+        if not self.role:
+            return set()
         return set(
             self.role.permissions.values_list("code", flat=True)
-        )
- 
+        )        
     def has_perm(self, perm, obj=None):
         """
         Called by Django and DRF internally.
@@ -93,6 +102,22 @@ class User(AbstractBaseUser, PermissionsMixin):
     def has_module_perms(self, app_label):
         """Required by Django admin."""
         return self.is_superuser
+    
+    def clean(self):
+        super().clean()
+        # Ensure branch requires shop
+        if self.branch and not self.shop:
+            raise ValidationError("Branch requires a shop.")
+
+        if self.role and self.shop and self.role.shop_id != self.shop_id:
+            raise ValidationError({"role": "Assigned role must belong to the same shop as the user."})
+
+    def save(self, *args, **kwargs):
+        if self.branch:
+            self.shop = self.branch.shop
+        self.full_clean()
+
+        super().save(*args, **kwargs)
 
 
     def __str__(self):

@@ -4,18 +4,17 @@ from .models import Shop,Branch,Product
 
 @admin.register(Shop)
 class ShopAdmin(admin.ModelAdmin):
-    list_display = ('id', 'name', 'owner',)
+    list_display = ('id', 'name',)
 
-    list_filter = ('owner',)
-    search_fields = ('name', 'owner')
+    search_fields = ('name',)
     ordering = ('id',)
 
 
 @admin.register(Branch)
 class BranchAdmin(admin.ModelAdmin):
-    list_display = ('id', 'shop','name', 'manager',)
+    list_display = ('id', 'shop','name',)
 
-    list_filter = ('manager','shop')
+    list_filter = ('shop',)
     search_fields = ('name',)
     ordering = ('id',)
 
