@@ -235,13 +235,13 @@ class ShopMembership(models.Model):
         ).exclude(pk=self.pk)
 
         if existing.exists():
-            # All existing memberships must be admin-level
-            is_existing_admin = existing.filter(
+            # All existing memberships must be admin-level (every one must have shop:own)
+            non_owner_count = existing.exclude(
                 role__permissions__code="shop:own",
                 role__permissions__is_active=True
-            ).exists()
+            ).count()
 
-            if not is_existing_admin:
+            if non_owner_count > 0:
                 raise ValidationError(
                     "Non-admin users can only belong to one shop."
                 )
@@ -263,3 +263,7 @@ class ShopMembership(models.Model):
 
     def __str__(self):
         return f"{self.user.email} @ {self.shop.name} ({self.role.name})"
+
+# 1 user → multiple memberships	✅ YES
+# 1 user → multiple memberships in same shop	❌ NO
+# 1 user → memberships across different shops	✅ YES (with rules) (ONLY FOR ADMINS)
