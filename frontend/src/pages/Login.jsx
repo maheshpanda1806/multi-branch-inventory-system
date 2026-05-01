@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
+import { api } from '../api'
 
 export default function Login() {
   const navigate = useNavigate()
@@ -39,9 +40,18 @@ export default function Login() {
     if (Object.keys(newErrors).length === 0) {
       setLoading(true)
       try {
-        console.log('Login attempt:', formData)
-        await new Promise(resolve => setTimeout(resolve, 1000))
-        navigate('/dashboard')
+        const response = await api.login(formData.email, formData.password)
+        
+        if (response.access) {
+          // Store tokens
+          api.setTokens(response.access, response.refresh)
+          // Redirect to dashboard
+          navigate('/dashboard')
+        } else if (response.error) {
+          setErrors({ submit: response.error })
+        } else {
+          setErrors({ submit: 'Login failed. Please try again.' })
+        }
       } catch (error) {
         setErrors({ submit: 'Login failed. Please try again.' })
       } finally {

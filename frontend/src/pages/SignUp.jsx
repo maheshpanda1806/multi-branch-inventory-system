@@ -1,16 +1,14 @@
 import { useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
+import { api } from '../api'
 
 export default function SignUp() {
   const navigate = useNavigate()
   const [formData, setFormData] = useState({
-    firstName: '',
-    lastName: '',
     email: '',
+    username: '',
     password: '',
     confirmPassword: '',
-    company: '',
-    branches: '1',
     agreeTerms: false
   })
   const [errors, setErrors] = useState({})
@@ -47,10 +45,10 @@ export default function SignUp() {
   const validateForm = () => {
     const newErrors = {}
     
-    if (!formData.firstName.trim()) newErrors.firstName = 'First name is required'
-    if (!formData.lastName.trim()) newErrors.lastName = 'Last name is required'
     if (!formData.email) newErrors.email = 'Email is required'
     else if (!/\S+@\S+\.\S+/.test(formData.email)) newErrors.email = 'Email is invalid'
+    
+    if (!formData.username.trim()) newErrors.username = 'Username is required'
     
     if (!formData.password) newErrors.password = 'Password is required'
     else if (formData.password.length < 8) newErrors.password = 'Password must be at least 8 characters'
@@ -59,7 +57,6 @@ export default function SignUp() {
       newErrors.confirmPassword = 'Passwords do not match'
     }
     
-    if (!formData.company.trim()) newErrors.company = 'Company name is required'
     if (!formData.agreeTerms) newErrors.agreeTerms = 'You must agree to the terms'
     
     return newErrors
@@ -72,9 +69,22 @@ export default function SignUp() {
     if (Object.keys(newErrors).length === 0) {
       setLoading(true)
       try {
-        console.log('Sign up attempt:', formData)
-        await new Promise(resolve => setTimeout(resolve, 1500))
-        navigate('/dashboard')
+        const response = await api.signup(formData.email, formData.username, formData.password)
+        
+        if (response.access) {
+          // Store tokens
+          api.setTokens(response.access, response.refresh)
+          // Redirect to dashboard
+          navigate('/dashboard')
+        } else if (response.email) {
+          setErrors({ email: Array.isArray(response.email) ? response.email[0] : response.email })
+        } else if (response.username) {
+          setErrors({ username: Array.isArray(response.username) ? response.username[0] : response.username })
+        } else if (response.password) {
+          setErrors({ password: Array.isArray(response.password) ? response.password[0] : response.password })
+        } else {
+          setErrors({ submit: 'Sign up failed. Please try again.' })
+        }
       } catch (error) {
         setErrors({ submit: 'Sign up failed. Please try again.' })
       } finally {
@@ -125,49 +135,6 @@ export default function SignUp() {
           )}
 
           <form onSubmit={handleSubmit} className="space-y-6">
-            {/* Name Row */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div>
-                <label htmlFor="firstName" className="block text-lg font-black text-black mb-2">
-                  FIRST NAME
-                </label>
-                <input
-                  type="text"
-                  id="firstName"
-                  name="firstName"
-                  value={formData.firstName}
-                  onChange={handleChange}
-                  placeholder="John"
-                  className={`w-full px-4 py-4 bg-white border-4 text-black placeholder-gray-500 focus:outline-none font-bold text-lg ${
-                    errors.firstName ? 'border-red-500' : 'border-black'
-                  }`}
-                />
-                {errors.firstName && (
-                  <p className="mt-2 text-lg font-bold text-red-500">{errors.firstName}</p>
-                )}
-              </div>
-
-              <div>
-                <label htmlFor="lastName" className="block text-lg font-black text-black mb-2">
-                  LAST NAME
-                </label>
-                <input
-                  type="text"
-                  id="lastName"
-                  name="lastName"
-                  value={formData.lastName}
-                  onChange={handleChange}
-                  placeholder="Doe"
-                  className={`w-full px-4 py-4 bg-white border-4 text-black placeholder-gray-500 focus:outline-none font-bold text-lg ${
-                    errors.lastName ? 'border-red-500' : 'border-black'
-                  }`}
-                />
-                {errors.lastName && (
-                  <p className="mt-2 text-lg font-bold text-red-500">{errors.lastName}</p>
-                )}
-              </div>
-            </div>
-
             {/* Email Field */}
             <div>
               <label htmlFor="email" className="block text-lg font-black text-black mb-2">
@@ -189,45 +156,25 @@ export default function SignUp() {
               )}
             </div>
 
-            {/* Company & Branches Row */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div>
-                <label htmlFor="company" className="block text-lg font-black text-black mb-2">
-                  COMPANY NAME
-                </label>
-                <input
-                  type="text"
-                  id="company"
-                  name="company"
-                  value={formData.company}
-                  onChange={handleChange}
-                  placeholder="Your Company"
-                  className={`w-full px-4 py-4 bg-white border-4 text-black placeholder-gray-500 focus:outline-none font-bold text-lg ${
-                    errors.company ? 'border-red-500' : 'border-black'
-                  }`}
-                />
-                {errors.company && (
-                  <p className="mt-2 text-lg font-bold text-red-500">{errors.company}</p>
-                )}
-              </div>
-
-              <div>
-                <label htmlFor="branches" className="block text-lg font-black text-black mb-2">
-                  BRANCHES
-                </label>
-                <select
-                  id="branches"
-                  name="branches"
-                  value={formData.branches}
-                  onChange={handleChange}
-                  className="w-full px-4 py-4 bg-white border-4 border-black text-black focus:outline-none font-bold text-lg"
-                >
-                  <option value="1">1 Branch</option>
-                  <option value="2-5">2-5 Branches</option>
-                  <option value="6-10">6-10 Branches</option>
-                  <option value="10+">10+ Branches</option>
-                </select>
-              </div>
+            {/* Username Field */}
+            <div>
+              <label htmlFor="username" className="block text-lg font-black text-black mb-2">
+                USERNAME
+              </label>
+              <input
+                type="text"
+                id="username"
+                name="username"
+                value={formData.username}
+                onChange={handleChange}
+                placeholder="username"
+                className={`w-full px-4 py-4 bg-white border-4 text-black placeholder-gray-500 focus:outline-none font-bold text-lg ${
+                  errors.username ? 'border-red-500' : 'border-black'
+                }`}
+              />
+              {errors.username && (
+                <p className="mt-2 text-lg font-bold text-red-500">{errors.username}</p>
+              )}
             </div>
 
             {/* Password Field */}
@@ -331,22 +278,6 @@ export default function SignUp() {
             <Link to="/login" className="text-black font-black hover:text-yellow-300 transition-colors">
               SIGN IN
             </Link>
-          </div>
-        </div>
-
-        {/* Benefits */}
-        <div className="mt-8 grid grid-cols-1 md:grid-cols-3 gap-4">
-          <div className="border-4 border-black bg-pink-300 p-6 text-center font-bold text-black">
-            <p className="text-2xl mb-2">✨</p>
-            <p className="text-lg">Free for 30 days</p>
-          </div>
-          <div className="border-4 border-black bg-cyan-300 p-6 text-center font-bold text-black">
-            <p className="text-2xl mb-2">🔒</p>
-            <p className="text-lg">Bank-level security</p>
-          </div>
-          <div className="border-4 border-black bg-yellow-300 p-6 text-center font-bold text-black">
-            <p className="text-2xl mb-2">💬</p>
-            <p className="text-lg">24/7 support</p>
           </div>
         </div>
       </div>

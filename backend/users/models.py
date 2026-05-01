@@ -1,5 +1,6 @@
 import uuid
 from django.db import models
+from django.db.models import Q
 from django.contrib.auth.models import AbstractBaseUser, BaseUserManager, PermissionsMixin
 from django.core.exceptions import ValidationError
 
@@ -108,27 +109,26 @@ class User(AbstractBaseUser, PermissionsMixin):
     REQUIRED_FIELDS = ['username']
     objects = UserManager()
 
+    def get_memberships(self, shop_id=None):
+        queryset = self.memberships.select_related("role").filter(is_active=True)
+        if shop_id is not None:
+            queryset = queryset.filter(shop_id=shop_id)
+        return queryset
+
     def get_membership(self, shop_id):
-        try:
-            return self.memberships.select_related("role").get(
-                shop_id=shop_id,
-                is_active=True
-            )
-        except ShopMembership.DoesNotExist:
-            return None
+        return self.get_memberships(shop_id).first()
 
     def get_permissions_for_shop(self, shop_id):
         """
         Returns a set of permission codes for this user within a specific shop.
-        Replaces the old `get_permissions()` which had no shop context.
         """
-        membership = self.get_membership(shop_id)
-        if not membership:
-            return set()
         return set(
-            membership.role.permissions
-            .filter(is_active=True)
-            .values_list("code", flat=True)
+            Permission.objects.filter(
+                roles__memberships__user=self,
+                roles__memberships__shop_id=shop_id,
+                roles__memberships__is_active=True,
+                is_active=True,
+            ).values_list("code", flat=True).distinct()
         )
 
     def has_perm(self, perm, obj=None):
@@ -156,18 +156,23 @@ class User(AbstractBaseUser, PermissionsMixin):
 
 class ShopMembership(models.Model):
     """
-    NEW MODEL. The single source of truth for user access control.
+    The single source of truth for user access control.
 
-    Ties a User to a Shop with exactly one Role and an optional Branch.
+    Ties a User to a Shop with one Role and an optional Branch.
     Replaces the old User.shop / User.branch / User.role FK approach.
 
     Rules enforced in clean():
-    - One membership per user per shop (UniqueConstraint)
+    - One membership per user per shop/role/branch combination
     - Role must belong to the same shop
     - Branch must belong to the same shop
     - Branch-scoped roles require a branch
-    - Non-admin users can only belong to one shop
-    - If a user has multiple memberships, all must carry 'shop:own' permission
+    - Shop-level roles must NOT have a branch assigned
+    - Only ONE owner (shop:own role) allowed per shop
+    - Only ONE manager (branch:manage role) allowed per branch
+    - Extra memberships in other shops require shop:own on every membership
+
+    Note: One user CAN have multiple roles in the same shop/branch
+    (e.g., both Manager + Supervisor), but cannot hold shop:own or branch:manage twice.
 
     branch=None → shop-level role  (Admin/Owner)
     branch=set  → branch-level role (Manager, Cashier, etc.)
@@ -201,40 +206,88 @@ class ShopMembership(models.Model):
     class Meta:
         constraints = [
             models.UniqueConstraint(
-                fields=["user", "shop"],
-                name="unique_membership_per_shop"
+                fields=["user", "shop", "role"],
+                condition=Q(branch__isnull=True),
+                name="unique_shop_level_membership_per_user_role",
+            ),
+            models.UniqueConstraint(
+                fields=["user", "shop", "role", "branch"],
+                condition=Q(branch__isnull=False),
+                name="unique_branch_membership_per_user_role_branch",
             )
         ]
 
     def clean(self):
         # 1. Role must belong to the same shop as this membership
-        if self.role.shop_id != self.shop_id:
+        if self.role and self.shop and self.role.shop_id != self.shop_id:
             raise ValidationError("Role must belong to the same shop.")
 
         # 2. Branch must belong to the same shop as this membership
-        if self.branch and self.branch.shop_id != self.shop_id:
+        if self.branch and self.shop and self.branch.shop_id != self.shop_id:
             raise ValidationError("Branch must belong to the same shop.")
 
         # 3. Branch-scoped roles must have a branch assigned
-        if self.role.is_branch_scoped and not self.branch:
+        if self.role and self.role.is_branch_scoped and not self.branch:
             raise ValidationError(
                 f"Role '{self.role.name}' requires a branch assignment."
             )
 
         # 4. Shop-level roles must NOT have a branch assigned
-        if not self.role.is_branch_scoped and self.branch:
+        if self.role and not self.role.is_branch_scoped and self.branch:
             raise ValidationError(
                 f"Role '{self.role.name}' is a shop-level role and cannot be assigned to a branch."
             )
 
-        # 5. Multi-shop rule:
+        # 5. Only one owner per shop (only one role with 'shop:own' permission)
+        if self.shop and self.role and self.is_active:
+            is_owner_role = self.role.permissions.filter(
+                code="shop:own",
+                is_active=True
+            ).exists()
+            
+            if is_owner_role:
+                # Check if another active membership with shop:own already exists in this shop
+                existing_owner = ShopMembership.objects.filter(
+                    shop=self.shop,
+                    role__permissions__code="shop:own",
+                    role__permissions__is_active=True,
+                    is_active=True
+                ).exclude(pk=self.pk).exists()
+                
+                if existing_owner:
+                    raise ValidationError(
+                        "Only one owner is allowed per shop."
+                    )
+
+        # 6. Only one manager per branch (only one role with 'branch:manage' permission)
+        if self.branch and self.role and self.is_active:
+            is_manager_role = self.role.permissions.filter(
+                code="branch:manage",
+                is_active=True
+            ).exists()
+            
+            if is_manager_role:
+                # Check if another active membership with branch:manage already exists in this branch
+                existing_manager = ShopMembership.objects.filter(
+                    branch=self.branch,
+                    role__permissions__code="branch:manage",
+                    role__permissions__is_active=True,
+                    is_active=True
+                ).exclude(pk=self.pk).exists()
+                
+                if existing_manager:
+                    raise ValidationError(
+                        "Only one manager is allowed per branch."
+                    )
+
+        # 7. Multi-shop rule:
         #    Only users whose existing memberships all carry 'shop:own'
         #    can be added to another shop.
         existing = ShopMembership.objects.filter(
             user=self.user
         ).exclude(pk=self.pk)
 
-        if existing.exists():
+        if self.shop and existing.exclude(shop_id=self.shop_id).exists():
             # All existing memberships must be admin-level (every one must have shop:own)
             non_owner_count = existing.exclude(
                 role__permissions__code="shop:own",
@@ -265,5 +318,8 @@ class ShopMembership(models.Model):
         return f"{self.user.email} @ {self.shop.name} ({self.role.name})"
 
 # 1 user → multiple memberships	✅ YES
-# 1 user → multiple memberships in same shop	❌ NO
+# 1 user → multiple roles in same shop	✅ YES
+# 1 user → multiple roles in same branch	✅ YES
+# Only 1 owner per shop	✅ ENFORCED
+# Only 1 manager per branch	✅ ENFORCED
 # 1 user → memberships across different shops	✅ YES (with rules) (ONLY FOR ADMINS)
